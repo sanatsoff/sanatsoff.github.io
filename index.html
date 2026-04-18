@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookmark Manager</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }
+        h1 { text-align: center; }
+        #bookmark-form { margin: 20px auto; max-width: 600px; }
+        input[type='text'] { width: calc(100% - 100px); padding: 10px; }
+        button { padding: 10px 20px; }
+        #bookmark-list { margin-top: 20px; list-style: none; padding: 0; }
+        .bookmark-item { background-color: #fff; margin: 10px 0; padding: 10px; display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+    <h1>Bookmark Manager</h1>
+    <div id="bookmark-form">
+        <input type="text" id="bookmark-url" placeholder="Enter Bookmark URL" />
+        <input type="text" id="bookmark-title" placeholder="Enter Bookmark Title" />
+        <button id="add-bookmark">Add Bookmark</button>
+    </div>
+    <ul id="bookmark-list"></ul>
+    <script>
+        document.getElementById('add-bookmark').addEventListener('click', function() {
+            const url = document.getElementById('bookmark-url').value;
+            const title = document.getElementById('bookmark-title').value;
+            if (url && title) {
+                const list = document.getElementById('bookmark-list');
+                const listItem = document.createElement('li');
+                listItem.className = 'bookmark-item';
+                listItem.innerHTML = `<a href='${url}' target='_blank'>${title}</a><button class='delete-btn'>Delete</button>`;
+                listItem.querySelector('.delete-btn').addEventListener('click', function() {
+                    list.removeChild(listItem);
+                });
+                list.appendChild(listItem);
+                document.getElementById('bookmark-url').value = '';
+                document.getElementById('bookmark-title').value = '';
+            } else {
+                alert('Please enter both a title and a URL.');
+            }
+        });
+    </script>
+</body>
+</html>
