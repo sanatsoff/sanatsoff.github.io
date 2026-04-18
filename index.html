@@ -140,6 +140,7 @@
         
         .bookmark-title { font-weight: 600; font-size: 0.95rem; word-break: break-word; }
         .bookmark-url { font-size: 0.8rem; color: var(--text-secondary); }
+        .bookmark-description { font-size: 0.75rem; color: var(--text-secondary); margin-top: 3px; }
         
         .bookmark-category {
             display: inline-block;
@@ -183,11 +184,13 @@
             border-radius: 12px;
             max-width: 500px;
             width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
         }
         
         .modal-content h2 { margin-bottom: 20px; }
-        .modal-content input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
-        .modal-content input:focus { outline: none; border-color: var(--primary); }
+        .modal-content input, .modal-content textarea { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-family: inherit; }
+        .modal-content input:focus, .modal-content textarea:focus { outline: none; border-color: var(--primary); }
         .modal-content button { width: 100%; padding: 10px; margin-top: 10px; }
         
         .favicon-preview {
@@ -205,6 +208,7 @@
         
         .favicon-preview img { max-width: 50px; max-height: 50px; }
         
+        .loading { opacity: 0.6; }
         .close { float: right; font-size: 28px; cursor: pointer; }
     </style>
 </head>
@@ -232,8 +236,10 @@
         <div class="modal-content">
             <span class="close">&times;</span>
             <h2 id="modal-title">Add Bookmark</h2>
-            <input type="text" id="title-input" placeholder="Title" required>
             <input type="text" id="url-input" placeholder="example.com or https://example.com" required>
+            <button class="btn" id="fetch-btn" style="margin-bottom: 15px;">🔍 Fetch Title & Description</button>
+            <input type="text" id="title-input" placeholder="Title (auto-filled if blank)" required>
+            <textarea id="description-input" placeholder="Description (optional, auto-filled if blank)" rows="3"></textarea>
             <input type="text" id="category-input" placeholder="Category (optional)">
             <div id="favicon-preview" class="favicon-preview">🔗</div>
             <button class="btn btn-primary" id="save-btn">Save</button>
@@ -258,7 +264,6 @@
             localStorage.setItem('bookmarks', JSON.stringify(bookmarks));
         }
         
-        // AUTO-ADD HTTP/HTTPS
         function normalizeUrl(url) {
             url = url.trim();
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -267,13 +272,40 @@
             return url;
         }
         
-        // FETCH FAVICON
         async function getFavicon(url) {
             try {
                 const domain = new URL(url).hostname;
                 return `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
             } catch {
                 return null;
+            }
+        }
+        
+        // AUTO-FETCH TITLE AND DESCRIPTION
+        async function fetchPageMetadata(url) {
+            try {
+                const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
+                const html = await response.text();
+                
+                // Extract title
+                let title = '';
+                const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+                if (titleMatch) title = titleMatch[1].trim();
+                
+                // Extract description from og:description or meta description
+                let description = '';
+                const ogDescMatch = html.match(/<meta\s+property=["']og:description["']\s+content=["']([^"']+)["']/i);
+                if (ogDescMatch) {
+                    description = ogDescMatch[1].trim();
+                } else {
+                    const metaDescMatch = html.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i);
+                    if (metaDescMatch) description = metaDescMatch[1].trim();
+                }
+                
+                return { title, description };
+            } catch (err) {
+                console.log('Could not fetch metadata:', err);
+                return { title: '', description: '' };
             }
         }
         
@@ -298,11 +330,17 @@
                     categoryHtml = `<div class="bookmark-category">${escapeHtml(b.category)}</div>`;
                 }
                 
+                let descriptionHtml = '';
+                if (b.description) {
+                    descriptionHtml = `<div class="bookmark-description">${escapeHtml(b.description)}</div>`;
+                }
+                
                 card.innerHTML = `
                     <div class="bookmark-favicon">${b.icon ? `<img src="${b.icon}" alt="icon" onerror="this.parentElement.textContent='🔗'">` : '🔗'}</div>
                     <div class="bookmark-info">
                         <div class="bookmark-title">${escapeHtml(b.title)}</div>
                         <div class="bookmark-url">${escapeHtml(new URL(b.url).hostname)}</div>
+                        ${descriptionHtml}
                         ${categoryHtml}
                     </div>
                     <div class="bookmark-actions">
@@ -331,8 +369,9 @@
         document.getElementById('add-btn').onclick = () => {
             editIndex = null;
             document.getElementById('modal-title').textContent = 'Add Bookmark';
-            document.getElementById('title-input').value = '';
             document.getElementById('url-input').value = '';
+            document.getElementById('title-input').value = '';
+            document.getElementById('description-input').value = '';
             document.getElementById('category-input').value = '';
             document.getElementById('favicon-preview').innerHTML = '🔗';
             document.getElementById('delete-btn').style.display = 'none';
@@ -343,15 +382,15 @@
             editIndex = i;
             const b = bookmarks[i];
             document.getElementById('modal-title').textContent = 'Edit Bookmark';
-            document.getElementById('title-input').value = b.title;
             document.getElementById('url-input').value = b.url;
+            document.getElementById('title-input').value = b.title;
+            document.getElementById('description-input').value = b.description || '';
             document.getElementById('category-input').value = b.category || '';
             document.getElementById('favicon-preview').innerHTML = b.icon ? `<img src="${b.icon}" alt="icon" onerror="this.parentElement.textContent='🔗'">` : '🔗';
             document.getElementById('delete-btn').style.display = 'block';
             document.getElementById('modal').classList.add('show');
         }
         
-        // FETCH ICON WHEN URL CHANGES
         document.getElementById('url-input').addEventListener('change', async () => {
             const url = normalizeUrl(document.getElementById('url-input').value);
             const icon = await getFavicon(url);
@@ -360,12 +399,30 @@
             }
         });
         
+        document.getElementById('fetch-btn').onclick = async () => {
+            const url = normalizeUrl(document.getElementById('url-input').value);
+            if (!url) { alert('Enter URL first'); return; }
+            
+            const btn = document.getElementById('fetch-btn');
+            btn.classList.add('loading');
+            btn.textContent = '⏳ Fetching...';
+            
+            const { title, description } = await fetchPageMetadata(url);
+            
+            if (title) document.getElementById('title-input').value = title;
+            if (description) document.getElementById('description-input').value = description;
+            
+            btn.classList.remove('loading');
+            btn.textContent = '🔍 Fetch Title & Description';
+        };
+        
         document.getElementById('save-btn').onclick = async () => {
-            let title = document.getElementById('title-input').value.trim();
             let url = document.getElementById('url-input').value.trim();
+            let title = document.getElementById('title-input').value.trim();
+            const description = document.getElementById('description-input').value.trim();
             const category = document.getElementById('category-input').value.trim();
             
-            if (!title || !url) { alert('Fill title and URL'); return; }
+            if (!url) { alert('URL is required'); return; }
             
             url = normalizeUrl(url);
             
@@ -376,12 +433,18 @@
                 return;
             }
             
+            // AUTO-FETCH TITLE IF EMPTY
+            if (!title) {
+                const { title: fetchedTitle } = await fetchPageMetadata(url);
+                title = fetchedTitle || new URL(url).hostname;
+            }
+            
             const icon = await getFavicon(url);
             
             if (editIndex !== null) {
-                bookmarks[editIndex] = { title, url, category, icon };
+                bookmarks[editIndex] = { title, url, description, category, icon };
             } else {
-                bookmarks.unshift({ title, url, category, icon });
+                bookmarks.unshift({ title, url, description, category, icon });
             }
             save();
             render();
