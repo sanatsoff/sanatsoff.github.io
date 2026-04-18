@@ -64,8 +64,10 @@
         .btn:hover { background: var(--border); }
         .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
         .btn-danger { background: var(--danger); color: white; border-color: var(--danger); }
+        .btn-warning { background: #f08000; color: white; border-color: #f08000; }
         .btn.active { background: var(--primary); color: white; }
         .btn-sm { padding: 6px 8px; font-size: 0.75rem; min-width: 30px; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         
         .view-toggle { display: flex; gap: 10px; margin-bottom: 20px; }
         
@@ -94,6 +96,7 @@
             gap: 10px;
             align-items: center;
             text-align: center;
+            position: relative;
         }
         
         .list-view .bookmark-card {
@@ -118,7 +121,7 @@
             align-items: center;
             justify-content: center;
             background: var(--bg);
-            font-size: 1.5rem;
+            font-size: 1.2rem;
             flex-shrink: 0;
             overflow: hidden;
         }
@@ -140,7 +143,7 @@
         
         .bookmark-title { font-weight: 600; font-size: 0.95rem; word-break: break-word; }
         .bookmark-url { font-size: 0.8rem; color: var(--text-secondary); }
-        .bookmark-description { font-size: 0.75rem; color: var(--text-secondary); margin-top: 3px; }
+        .bookmark-description { font-size: 0.75rem; color: var(--text-secondary); margin-top: 3px; line-height: 1.4; }
         
         .bookmark-category {
             display: inline-block;
@@ -189,8 +192,20 @@
         }
         
         .modal-content h2 { margin-bottom: 20px; }
-        .modal-content input, .modal-content textarea { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-family: inherit; }
-        .modal-content input:focus, .modal-content textarea:focus { outline: none; border-color: var(--primary); }
+        .modal-content input, .modal-content textarea { 
+            width: 100%; 
+            padding: 10px; 
+            margin-bottom: 15px; 
+            border: 1px solid var(--border); 
+            border-radius: 6px; 
+            background: var(--bg); 
+            color: var(--text); 
+            font-family: inherit; 
+        }
+        .modal-content input:focus, .modal-content textarea:focus { 
+            outline: none; 
+            border-color: var(--primary); 
+        }
         .modal-content button { width: 100%; padding: 10px; margin-top: 10px; }
         
         .favicon-preview {
@@ -208,8 +223,9 @@
         
         .favicon-preview img { max-width: 50px; max-height: 50px; }
         
-        .loading { opacity: 0.6; }
         .close { float: right; font-size: 28px; cursor: pointer; }
+        
+        .missing-icons { color: var(--danger); font-size: 0.8rem; }
     </style>
 </head>
 <body>
@@ -218,6 +234,7 @@
             <h1>📑 Bookmark Manager</h1>
             <div class="controls">
                 <button class="btn btn-primary" id="add-btn">+ Add</button>
+                <button class="btn btn-warning" id="refresh-all-btn" title="Fetch icons & metadata for all bookmarks">🔄 Refresh All</button>
                 <button class="btn" id="export-btn">📥 Export</button>
                 <button class="btn" id="import-btn">📤 Import</button>
             </div>
@@ -237,11 +254,10 @@
             <span class="close">&times;</span>
             <h2 id="modal-title">Add Bookmark</h2>
             <input type="text" id="url-input" placeholder="example.com or https://example.com" required>
-            <button class="btn" id="fetch-btn" style="margin-bottom: 15px;">🔍 Fetch Title & Description</button>
-            <input type="text" id="title-input" placeholder="Title (auto-filled if blank)" required>
-            <textarea id="description-input" placeholder="Description (optional, auto-filled if blank)" rows="3"></textarea>
+            <input type="text" id="title-input" placeholder="Title">
+            <textarea id="description-input" placeholder="Description (optional)" rows="2"></textarea>
             <input type="text" id="category-input" placeholder="Category (optional)">
-            <div id="favicon-preview" class="favicon-preview">🔗</div>
+            <div id="favicon-preview" class="favicon-preview">���</div>
             <button class="btn btn-primary" id="save-btn">Save</button>
             <button class="btn btn-danger" id="delete-btn" style="display:none;">Delete</button>
         </div>
@@ -275,36 +291,27 @@
         async function getFavicon(url) {
             try {
                 const domain = new URL(url).hostname;
-                return `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
+                return `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
             } catch {
                 return null;
             }
         }
         
-        // AUTO-FETCH TITLE AND DESCRIPTION
+        // Fetch metadata using LinkPreview API
         async function fetchPageMetadata(url) {
             try {
-                const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
-                const html = await response.text();
+                const encodedUrl = encodeURIComponent(url);
+                const response = await fetch(`https://api.linkpreview.net?key=free&q=${encodedUrl}`, {
+                    method: 'GET'
+                });
+                const data = await response.json();
                 
-                // Extract title
-                let title = '';
-                const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-                if (titleMatch) title = titleMatch[1].trim();
-                
-                // Extract description from og:description or meta description
-                let description = '';
-                const ogDescMatch = html.match(/<meta\s+property=["']og:description["']\s+content=["']([^"']+)["']/i);
-                if (ogDescMatch) {
-                    description = ogDescMatch[1].trim();
-                } else {
-                    const metaDescMatch = html.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i);
-                    if (metaDescMatch) description = metaDescMatch[1].trim();
-                }
-                
-                return { title, description };
+                return {
+                    title: data.title || '',
+                    description: data.description || ''
+                };
             } catch (err) {
-                console.log('Could not fetch metadata:', err);
+                console.log('Metadata fetch failed');
                 return { title: '', description: '' };
             }
         }
@@ -332,7 +339,7 @@
                 
                 let descriptionHtml = '';
                 if (b.description) {
-                    descriptionHtml = `<div class="bookmark-description">${escapeHtml(b.description)}</div>`;
+                    descriptionHtml = `<div class="bookmark-description">${escapeHtml(b.description.substring(0, 100))}</div>`;
                 }
                 
                 card.innerHTML = `
@@ -391,35 +398,20 @@
             document.getElementById('modal').classList.add('show');
         }
         
-        document.getElementById('url-input').addEventListener('change', async () => {
-            const url = normalizeUrl(document.getElementById('url-input').value);
-            const icon = await getFavicon(url);
-            if (icon) {
-                document.getElementById('favicon-preview').innerHTML = `<img src="${icon}" alt="icon" onerror="this.parentElement.textContent='🔗'">`;
+        document.getElementById('url-input').addEventListener('input', async () => {
+            const url = document.getElementById('url-input').value.trim();
+            if (url.startsWith('http')) {
+                const icon = await getFavicon(url);
+                if (icon) {
+                    document.getElementById('favicon-preview').innerHTML = `<img src="${icon}" alt="icon" onerror="this.parentElement.textContent='🔗'">`;
+                }
             }
         });
-        
-        document.getElementById('fetch-btn').onclick = async () => {
-            const url = normalizeUrl(document.getElementById('url-input').value);
-            if (!url) { alert('Enter URL first'); return; }
-            
-            const btn = document.getElementById('fetch-btn');
-            btn.classList.add('loading');
-            btn.textContent = '⏳ Fetching...';
-            
-            const { title, description } = await fetchPageMetadata(url);
-            
-            if (title) document.getElementById('title-input').value = title;
-            if (description) document.getElementById('description-input').value = description;
-            
-            btn.classList.remove('loading');
-            btn.textContent = '🔍 Fetch Title & Description';
-        };
         
         document.getElementById('save-btn').onclick = async () => {
             let url = document.getElementById('url-input').value.trim();
             let title = document.getElementById('title-input').value.trim();
-            const description = document.getElementById('description-input').value.trim();
+            let description = document.getElementById('description-input').value.trim();
             const category = document.getElementById('category-input').value.trim();
             
             if (!url) { alert('URL is required'); return; }
@@ -433,10 +425,9 @@
                 return;
             }
             
-            // AUTO-FETCH TITLE IF EMPTY
+            // Use existing title or fetch if empty
             if (!title) {
-                const { title: fetchedTitle } = await fetchPageMetadata(url);
-                title = fetchedTitle || new URL(url).hostname;
+                title = new URL(url).hostname;
             }
             
             const icon = await getFavicon(url);
@@ -467,6 +458,38 @@
                 render();
             }
         }
+        
+        // GLOBAL REFRESH BUTTON - Fetches all icons and metadata
+        document.getElementById('refresh-all-btn').onclick = async () => {
+            const btn = document.getElementById('refresh-all-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '⏳ Refreshing...';
+            
+            let count = 0;
+            for (let i = 0; i < bookmarks.length; i++) {
+                const b = bookmarks[i];
+                
+                // Fetch icon
+                const icon = await getFavicon(b.url);
+                if (icon) bookmarks[i].icon = icon;
+                
+                // Fetch metadata if missing
+                if (!b.title || !b.description) {
+                    const { title, description } = await fetchPageMetadata(b.url);
+                    if (!b.title && title) bookmarks[i].title = title;
+                    if (!b.description && description) bookmarks[i].description = description;
+                }
+                
+                count++;
+            }
+            
+            save();
+            render();
+            btn.disabled = false;
+            btn.textContent = originalText;
+            alert(`✅ Refreshed ${count} bookmarks!`);
+        };
         
         document.getElementById('list-btn').onclick = () => {
             viewMode = 'list';
@@ -505,10 +528,17 @@
                 try {
                     const imported = JSON.parse(evt.target.result);
                     if (Array.isArray(imported)) {
-                        bookmarks = imported;
+                        // Initialize missing fields
+                        bookmarks = imported.map(b => ({
+                            title: b.title || '',
+                            url: b.url || '',
+                            description: b.description || '',
+                            category: b.category || '',
+                            icon: b.icon || null
+                        }));
                         save();
                         render();
-                        alert('✅ Bookmarks imported!');
+                        alert('✅ Bookmarks imported! Click "🔄 Refresh All" to fetch icons & metadata.');
                     }
                 } catch { alert('❌ Error importing'); }
             };
