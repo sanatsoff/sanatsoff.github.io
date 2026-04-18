@@ -96,7 +96,6 @@
             gap: 10px;
             align-items: center;
             text-align: center;
-            position: relative;
         }
         
         .list-view .bookmark-card {
@@ -224,8 +223,6 @@
         .favicon-preview img { max-width: 50px; max-height: 50px; }
         
         .close { float: right; font-size: 28px; cursor: pointer; }
-        
-        .missing-icons { color: var(--danger); font-size: 0.8rem; }
     </style>
 </head>
 <body>
@@ -234,7 +231,7 @@
             <h1>📑 Bookmark Manager</h1>
             <div class="controls">
                 <button class="btn btn-primary" id="add-btn">+ Add</button>
-                <button class="btn btn-warning" id="refresh-all-btn" title="Fetch icons & metadata for all bookmarks">🔄 Refresh All</button>
+                <button class="btn btn-warning" id="refresh-all-btn" title="Fetch icons for all bookmarks">🔄 Refresh Icons</button>
                 <button class="btn" id="export-btn">📥 Export</button>
                 <button class="btn" id="import-btn">📤 Import</button>
             </div>
@@ -257,7 +254,7 @@
             <input type="text" id="title-input" placeholder="Title">
             <textarea id="description-input" placeholder="Description (optional)" rows="2"></textarea>
             <input type="text" id="category-input" placeholder="Category (optional)">
-            <div id="favicon-preview" class="favicon-preview">���</div>
+            <div id="favicon-preview" class="favicon-preview">🔗</div>
             <button class="btn btn-primary" id="save-btn">Save</button>
             <button class="btn btn-danger" id="delete-btn" style="display:none;">Delete</button>
         </div>
@@ -288,31 +285,13 @@
             return url;
         }
         
+        // Get favicon - uses Google's favicon service (most reliable)
         async function getFavicon(url) {
             try {
                 const domain = new URL(url).hostname;
                 return `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
             } catch {
                 return null;
-            }
-        }
-        
-        // Fetch metadata using LinkPreview API
-        async function fetchPageMetadata(url) {
-            try {
-                const encodedUrl = encodeURIComponent(url);
-                const response = await fetch(`https://api.linkpreview.net?key=free&q=${encodedUrl}`, {
-                    method: 'GET'
-                });
-                const data = await response.json();
-                
-                return {
-                    title: data.title || '',
-                    description: data.description || ''
-                };
-            } catch (err) {
-                console.log('Metadata fetch failed');
-                return { title: '', description: '' };
             }
         }
         
@@ -425,7 +404,7 @@
                 return;
             }
             
-            // Use existing title or fetch if empty
+            // Use title or fallback to domain
             if (!title) {
                 title = new URL(url).hostname;
             }
@@ -459,7 +438,7 @@
             }
         }
         
-        // GLOBAL REFRESH BUTTON - Fetches all icons and metadata
+        // GLOBAL REFRESH BUTTON - Fetches all icons
         document.getElementById('refresh-all-btn').onclick = async () => {
             const btn = document.getElementById('refresh-all-btn');
             const originalText = btn.textContent;
@@ -468,27 +447,18 @@
             
             let count = 0;
             for (let i = 0; i < bookmarks.length; i++) {
-                const b = bookmarks[i];
-                
-                // Fetch icon
-                const icon = await getFavicon(b.url);
-                if (icon) bookmarks[i].icon = icon;
-                
-                // Fetch metadata if missing
-                if (!b.title || !b.description) {
-                    const { title, description } = await fetchPageMetadata(b.url);
-                    if (!b.title && title) bookmarks[i].title = title;
-                    if (!b.description && description) bookmarks[i].description = description;
+                const icon = await getFavicon(bookmarks[i].url);
+                if (icon) {
+                    bookmarks[i].icon = icon;
+                    count++;
                 }
-                
-                count++;
             }
             
             save();
             render();
             btn.disabled = false;
             btn.textContent = originalText;
-            alert(`✅ Refreshed ${count} bookmarks!`);
+            alert(`✅ Updated ${count} bookmark icons!`);
         };
         
         document.getElementById('list-btn').onclick = () => {
@@ -508,7 +478,14 @@
         };
         
         document.getElementById('export-btn').onclick = () => {
-            const blob = new Blob([JSON.stringify(bookmarks, null, 2)], { type: 'application/json' });
+            // Export only text data (no icons)
+            const exportData = bookmarks.map(b => ({
+                title: b.title,
+                url: b.url,
+                description: b.description,
+                category: b.category
+            }));
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
@@ -528,19 +505,19 @@
                 try {
                     const imported = JSON.parse(evt.target.result);
                     if (Array.isArray(imported)) {
-                        // Initialize missing fields
+                        // Initialize with imported data + empty icon field
                         bookmarks = imported.map(b => ({
                             title: b.title || '',
-                            url: b.url || '',
+                            url: normalizeUrl(b.url || ''),
                             description: b.description || '',
                             category: b.category || '',
-                            icon: b.icon || null
+                            icon: null
                         }));
                         save();
                         render();
-                        alert('✅ Bookmarks imported! Click "🔄 Refresh All" to fetch icons & metadata.');
+                        alert('✅ Bookmarks imported! Click "🔄 Refresh Icons" to fetch favicons.');
                     }
-                } catch { alert('❌ Error importing'); }
+                } catch { alert('❌ Error importing bookmarks'); }
             };
             reader.readAsText(file);
         };
