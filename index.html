@@ -33,7 +33,6 @@
             background: var(--bg);
             color: var(--text);
             padding: 20px;
-            transition: background 0.3s, color 0.3s;
         }
         
         .container { max-width: 1200px; margin: 0 auto; }
@@ -49,11 +48,7 @@
         
         h1 { font-size: 2rem; }
         
-        .controls {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
+        .controls { display: flex; gap: 10px; flex-wrap: wrap; }
         
         .btn {
             padding: 10px 15px;
@@ -70,6 +65,7 @@
         .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
         .btn-danger { background: var(--danger); color: white; border-color: var(--danger); }
         .btn.active { background: var(--primary); color: white; }
+        .btn-sm { padding: 6px 8px; font-size: 0.75rem; min-width: 30px; }
         
         .view-toggle { display: flex; gap: 10px; margin-bottom: 20px; }
         
@@ -83,6 +79,7 @@
         #bookmarks-container.list-view {
             display: flex;
             flex-direction: column;
+            gap: 8px;
         }
         
         .bookmark-card {
@@ -102,7 +99,9 @@
         .list-view .bookmark-card {
             flex-direction: row;
             text-align: left;
-            align-items: flex-start;
+            align-items: center;
+            padding: 10px 12px;
+            gap: 12px;
         }
         
         .bookmark-card:hover {
@@ -121,6 +120,13 @@
             background: var(--bg);
             font-size: 1.5rem;
             flex-shrink: 0;
+            overflow: hidden;
+        }
+        
+        .bookmark-favicon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
         
         .list-view .bookmark-favicon { width: 32px; height: 32px; }
@@ -135,23 +141,22 @@
         .bookmark-title { font-weight: 600; font-size: 0.95rem; word-break: break-word; }
         .bookmark-url { font-size: 0.8rem; color: var(--text-secondary); }
         
+        .bookmark-category {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.65rem;
+            width: fit-content;
+        }
+        
         .bookmark-actions {
             display: flex;
-            gap: 8px;
-            width: 100%;
+            gap: 6px;
         }
         
-        .bookmark-actions button {
-            flex: 1;
-            padding: 6px;
-            font-size: 0.75rem;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        
-        .edit { background: var(--primary); color: white; }
-        .delete { background: var(--danger); color: white; }
+        .list-view .bookmark-actions { margin-left: auto; }
         
         .empty-state { text-align: center; padding: 40px; color: var(--text-secondary); }
         
@@ -182,7 +187,23 @@
         
         .modal-content h2 { margin-bottom: 20px; }
         .modal-content input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+        .modal-content input:focus { outline: none; border-color: var(--primary); }
         .modal-content button { width: 100%; padding: 10px; margin-top: 10px; }
+        
+        .favicon-preview {
+            text-align: center;
+            padding: 15px;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            font-size: 2rem;
+            margin-bottom: 15px;
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .favicon-preview img { max-width: 50px; max-height: 50px; }
         
         .close { float: right; font-size: 28px; cursor: pointer; }
     </style>
@@ -212,8 +233,9 @@
             <span class="close">&times;</span>
             <h2 id="modal-title">Add Bookmark</h2>
             <input type="text" id="title-input" placeholder="Title" required>
-            <input type="url" id="url-input" placeholder="https://example.com" required>
+            <input type="text" id="url-input" placeholder="example.com or https://example.com" required>
             <input type="text" id="category-input" placeholder="Category (optional)">
+            <div id="favicon-preview" class="favicon-preview">🔗</div>
             <button class="btn btn-primary" id="save-btn">Save</button>
             <button class="btn btn-danger" id="delete-btn" style="display:none;">Delete</button>
         </div>
@@ -236,6 +258,25 @@
             localStorage.setItem('bookmarks', JSON.stringify(bookmarks));
         }
         
+        // AUTO-ADD HTTP/HTTPS
+        function normalizeUrl(url) {
+            url = url.trim();
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                url = 'https://' + url;
+            }
+            return url;
+        }
+        
+        // FETCH FAVICON
+        async function getFavicon(url) {
+            try {
+                const domain = new URL(url).hostname;
+                return `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
+            } catch {
+                return null;
+            }
+        }
+        
         function render() {
             const container = document.getElementById('bookmarks-container');
             const emptyState = document.getElementById('empty-state');
@@ -251,29 +292,40 @@
             bookmarks.forEach((b, i) => {
                 const card = document.createElement('div');
                 card.className = 'bookmark-card';
+                
+                let categoryHtml = '';
+                if (b.category) {
+                    categoryHtml = `<div class="bookmark-category">${escapeHtml(b.category)}</div>`;
+                }
+                
                 card.innerHTML = `
-                    <div class="bookmark-favicon">🔗</div>
+                    <div class="bookmark-favicon">${b.icon ? `<img src="${b.icon}" alt="icon" onerror="this.parentElement.textContent='🔗'">` : '🔗'}</div>
                     <div class="bookmark-info">
-                        <div class="bookmark-title">${b.title}</div>
-                        <div class="bookmark-url">${new URL(b.url).hostname}</div>
+                        <div class="bookmark-title">${escapeHtml(b.title)}</div>
+                        <div class="bookmark-url">${escapeHtml(new URL(b.url).hostname)}</div>
+                        ${categoryHtml}
                     </div>
                     <div class="bookmark-actions">
-                        <button class="edit">✏️</button>
-                        <button class="delete">🗑️</button>
+                        <button class="edit btn btn-sm">✏️</button>
+                        <button class="delete btn btn-sm">🗑️</button>
                     </div>
                 `;
                 
-                card.querySelector('.edit').onclick = () => editBookmark(i);
-                card.querySelector('.delete').onclick = () => removeBookmark(i);
+                card.querySelector('.edit').onclick = (e) => { e.stopPropagation(); editBookmark(i); };
+                card.querySelector('.delete').onclick = (e) => { e.stopPropagation(); removeBookmark(i); };
                 
-                card.addEventListener('click', (e) => {
-                    if (!e.target.closest('.bookmark-actions')) {
-                        window.open(b.url, '_blank');
-                    }
+                card.addEventListener('click', () => {
+                    window.open(b.url, '_blank');
                 });
                 
                 container.appendChild(card);
             });
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
         
         document.getElementById('add-btn').onclick = () => {
@@ -282,33 +334,54 @@
             document.getElementById('title-input').value = '';
             document.getElementById('url-input').value = '';
             document.getElementById('category-input').value = '';
+            document.getElementById('favicon-preview').innerHTML = '🔗';
             document.getElementById('delete-btn').style.display = 'none';
             document.getElementById('modal').classList.add('show');
         };
         
-        function editBookmark(i) {
+        async function editBookmark(i) {
             editIndex = i;
             const b = bookmarks[i];
             document.getElementById('modal-title').textContent = 'Edit Bookmark';
             document.getElementById('title-input').value = b.title;
             document.getElementById('url-input').value = b.url;
             document.getElementById('category-input').value = b.category || '';
+            document.getElementById('favicon-preview').innerHTML = b.icon ? `<img src="${b.icon}" alt="icon" onerror="this.parentElement.textContent='🔗'">` : '🔗';
             document.getElementById('delete-btn').style.display = 'block';
             document.getElementById('modal').classList.add('show');
         }
         
-        document.getElementById('save-btn').onclick = () => {
-            const title = document.getElementById('title-input').value.trim();
-            const url = document.getElementById('url-input').value.trim();
+        // FETCH ICON WHEN URL CHANGES
+        document.getElementById('url-input').addEventListener('change', async () => {
+            const url = normalizeUrl(document.getElementById('url-input').value);
+            const icon = await getFavicon(url);
+            if (icon) {
+                document.getElementById('favicon-preview').innerHTML = `<img src="${icon}" alt="icon" onerror="this.parentElement.textContent='🔗'">`;
+            }
+        });
+        
+        document.getElementById('save-btn').onclick = async () => {
+            let title = document.getElementById('title-input').value.trim();
+            let url = document.getElementById('url-input').value.trim();
             const category = document.getElementById('category-input').value.trim();
             
-            if (!title || !url) { alert('Fill all required fields'); return; }
-            if (!url.startsWith('http://') && !url.startsWith('https://')) { alert('URL must start with http:// or https://'); return; }
+            if (!title || !url) { alert('Fill title and URL'); return; }
+            
+            url = normalizeUrl(url);
+            
+            try {
+                new URL(url);
+            } catch {
+                alert('Invalid URL');
+                return;
+            }
+            
+            const icon = await getFavicon(url);
             
             if (editIndex !== null) {
-                bookmarks[editIndex] = { title, url, category };
+                bookmarks[editIndex] = { title, url, category, icon };
             } else {
-                bookmarks.unshift({ title, url, category });
+                bookmarks.unshift({ title, url, category, icon });
             }
             save();
             render();
@@ -316,7 +389,7 @@
         };
         
         document.getElementById('delete-btn').onclick = () => {
-            if (editIndex !== null && confirm('Delete?')) {
+            if (editIndex !== null && confirm('Delete this bookmark?')) {
                 bookmarks.splice(editIndex, 1);
                 save();
                 render();
@@ -325,7 +398,7 @@
         };
         
         function removeBookmark(i) {
-            if (confirm('Delete?')) {
+            if (confirm('Delete this bookmark?')) {
                 bookmarks.splice(i, 1);
                 save();
                 render();
