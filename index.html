@@ -368,7 +368,7 @@
             return div.innerHTML;
         }
         
-        function createBookmarkCard(b, i) {
+        function createBookmarkCard(b, i, showCategory = true) {
             const card = document.createElement('div');
             card.className = 'bookmark-card';
             
@@ -377,12 +377,18 @@
                 descriptionHtml = `<div class="bookmark-description">${escapeHtml(b.description.substring(0, 100))}</div>`;
             }
             
+            let categoryHtml = '';
+            if (showCategory && b.category) {
+                categoryHtml = `<div class="bookmark-category">${escapeHtml(b.category)}</div>`;
+            }
+            
             card.innerHTML = `
                 <div class="bookmark-favicon">${b.icon ? `<img src="${b.icon}" alt="icon" onerror="this.parentElement.textContent='🔗'">` : '🔗'}</div>
                 <div class="bookmark-info">
                     <div class="bookmark-title">${escapeHtml(b.title)}</div>
                     <div class="bookmark-url">${escapeHtml(new URL(b.url).hostname)}</div>
                     ${descriptionHtml}
+                    ${categoryHtml}
                 </div>
                 <div class="bookmark-actions">
                     <button class="edit btn btn-sm">✏️</button>
@@ -455,7 +461,8 @@
                 }
                 
                 groups[groupName].forEach(b => {
-                    const card = createBookmarkCard(b, b.index);
+                    // Don't show category badge in grouped mode
+                    const card = createBookmarkCard(b, b.index, false);
                     groupContainer.appendChild(card);
                 });
                 
@@ -485,7 +492,7 @@
                 }
                 
                 noGroupBookmarks.forEach(b => {
-                    const card = createBookmarkCard(b, b.index);
+                    const card = createBookmarkCard(b, b.index, false);
                     groupContainer.appendChild(card);
                 });
                 
@@ -513,7 +520,8 @@
             }
             
             bookmarks.forEach((b, i) => {
-                const card = createBookmarkCard(b, i);
+                // Show category badge in normal mode
+                const card = createBookmarkCard(b, i, true);
                 container.appendChild(card);
             });
         }
