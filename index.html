@@ -70,6 +70,19 @@
         
         .view-toggle { display: flex; gap: 10px; margin-bottom: 20px; }
         
+        .group-section {
+            margin-bottom: 30px;
+        }
+        
+        .group-header {
+            font-size: 1.1rem;
+            font-weight: 600;
+            padding: 10px 0;
+            margin-bottom: 15px;
+            border-bottom: 2px solid var(--primary);
+            color: var(--primary);
+        }
+        
         #bookmarks-container {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -81,6 +94,14 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
+        }
+        
+        #bookmarks-container.grouped-grid {
+            display: contents;
+        }
+        
+        #bookmarks-container.grouped-list {
+            display: contents;
         }
         
         .bookmark-card {
@@ -97,12 +118,19 @@
             text-align: center;
         }
         
-        .list-view .bookmark-card {
+        .list-view .bookmark-card,
+        .grouped-list .bookmark-card {
             flex-direction: row;
             text-align: left;
             align-items: center;
             padding: 10px 12px;
             gap: 12px;
+        }
+        
+        .grouped-grid .bookmark-card {
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
         }
         
         .bookmark-card:hover {
@@ -130,7 +158,8 @@
             object-fit: contain;
         }
         
-        .list-view .bookmark-favicon { width: 32px; height: 32px; }
+        .list-view .bookmark-favicon,
+        .grouped-list .bookmark-favicon { width: 32px; height: 32px; }
         
         .bookmark-info {
             flex: 1;
@@ -158,7 +187,8 @@
             gap: 6px;
         }
         
-        .list-view .bookmark-actions { margin-left: auto; }
+        .list-view .bookmark-actions,
+        .grouped-list .bookmark-actions { margin-left: auto; }
         
         .empty-state { text-align: center; padding: 40px; color: var(--text-secondary); }
         
@@ -240,6 +270,7 @@
         <div class="view-toggle">
             <button class="btn active" id="list-btn">☰ List</button>
             <button class="btn" id="grid-btn">⊞ Grid</button>
+            <button class="btn" id="group-btn" title="Group by category">📁 Group</button>
         </div>
         
         <div id="bookmarks-container" class="list-view"></div>
@@ -267,6 +298,7 @@
         let editIndex = null;
         let viewMode = localStorage.getItem('viewMode') || 'list';
         let darkMode = localStorage.getItem('darkMode') === 'true';
+        let groupMode = localStorage.getItem('groupMode') === 'true';
         
         // Initialize dark mode
         function initDarkMode() {
@@ -285,7 +317,23 @@
             initDarkMode();
         }
         
+        function toggleGroupMode() {
+            groupMode = !groupMode;
+            localStorage.setItem('groupMode', groupMode);
+            updateGroupButton();
+            render();
+        }
+        
+        function updateGroupButton() {
+            if (groupMode) {
+                document.getElementById('group-btn').classList.add('active');
+            } else {
+                document.getElementById('group-btn').classList.remove('active');
+            }
+        }
+        
         document.getElementById('theme-btn').addEventListener('click', toggleDarkMode);
+        document.getElementById('group-btn').addEventListener('click', toggleGroupMode);
         
         function load() {
             const saved = localStorage.getItem('bookmarks');
@@ -314,7 +362,139 @@
             }
         }
         
-        function render() {
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function createBookmarkCard(b, i) {
+            const card = document.createElement('div');
+            card.className = 'bookmark-card';
+            
+            let descriptionHtml = '';
+            if (b.description) {
+                descriptionHtml = `<div class="bookmark-description">${escapeHtml(b.description.substring(0, 100))}</div>`;
+            }
+            
+            card.innerHTML = `
+                <div class="bookmark-favicon">${b.icon ? `<img src="${b.icon}" alt="icon" onerror="this.parentElement.textContent='🔗'">` : '🔗'}</div>
+                <div class="bookmark-info">
+                    <div class="bookmark-title">${escapeHtml(b.title)}</div>
+                    <div class="bookmark-url">${escapeHtml(new URL(b.url).hostname)}</div>
+                    ${descriptionHtml}
+                </div>
+                <div class="bookmark-actions">
+                    <button class="edit btn btn-sm">✏️</button>
+                    <button class="delete btn btn-sm">🗑️</button>
+                </div>
+            `;
+            
+            card.querySelector('.edit').onclick = (e) => { e.stopPropagation(); editBookmark(i); };
+            card.querySelector('.delete').onclick = (e) => { e.stopPropagation(); removeBookmark(i); };
+            
+            card.addEventListener('click', () => {
+                window.open(b.url, '_blank');
+            });
+            
+            return card;
+        }
+        
+        function renderGrouped() {
+            const container = document.getElementById('bookmarks-container');
+            const emptyState = document.getElementById('empty-state');
+            
+            if (bookmarks.length === 0) {
+                emptyState.style.display = 'block';
+                return;
+            }
+            
+            emptyState.style.display = 'none';
+            container.innerHTML = '';
+            
+            // Group bookmarks by category
+            const groups = {};
+            const noGroupBookmarks = [];
+            
+            bookmarks.forEach((b, i) => {
+                if (b.category) {
+                    if (!groups[b.category]) {
+                        groups[b.category] = [];
+                    }
+                    groups[b.category].push({ ...b, index: i });
+                } else {
+                    noGroupBookmarks.push({ ...b, index: i });
+                }
+            });
+            
+            // Determine container class
+            const containerClass = viewMode === 'grid' ? 'grouped-grid' : 'grouped-list';
+            container.className = containerClass;
+            
+            // Render sorted groups
+            const sortedGroups = Object.keys(groups).sort();
+            
+            sortedGroups.forEach(groupName => {
+                const groupSection = document.createElement('div');
+                groupSection.className = 'group-section';
+                
+                const header = document.createElement('div');
+                header.className = 'group-header';
+                header.textContent = groupName;
+                groupSection.appendChild(header);
+                
+                const groupContainer = document.createElement('div');
+                if (viewMode === 'grid') {
+                    groupContainer.style.display = 'grid';
+                    groupContainer.style.gridTemplateColumns = 'repeat(auto-fill, minmax(150px, 1fr))';
+                    groupContainer.style.gap = '15px';
+                } else {
+                    groupContainer.style.display = 'flex';
+                    groupContainer.style.flexDirection = 'column';
+                    groupContainer.style.gap = '8px';
+                }
+                
+                groups[groupName].forEach(b => {
+                    const card = createBookmarkCard(b, b.index);
+                    groupContainer.appendChild(card);
+                });
+                
+                groupSection.appendChild(groupContainer);
+                container.appendChild(groupSection);
+            });
+            
+            // Render "No Group" section
+            if (noGroupBookmarks.length > 0) {
+                const groupSection = document.createElement('div');
+                groupSection.className = 'group-section';
+                
+                const header = document.createElement('div');
+                header.className = 'group-header';
+                header.textContent = 'No Group';
+                groupSection.appendChild(header);
+                
+                const groupContainer = document.createElement('div');
+                if (viewMode === 'grid') {
+                    groupContainer.style.display = 'grid';
+                    groupContainer.style.gridTemplateColumns = 'repeat(auto-fill, minmax(150px, 1fr))';
+                    groupContainer.style.gap = '15px';
+                } else {
+                    groupContainer.style.display = 'flex';
+                    groupContainer.style.flexDirection = 'column';
+                    groupContainer.style.gap = '8px';
+                }
+                
+                noGroupBookmarks.forEach(b => {
+                    const card = createBookmarkCard(b, b.index);
+                    groupContainer.appendChild(card);
+                });
+                
+                groupSection.appendChild(groupContainer);
+                container.appendChild(groupSection);
+            }
+        }
+        
+        function renderNormal() {
             const container = document.getElementById('bookmarks-container');
             const emptyState = document.getElementById('empty-state');
             container.innerHTML = '';
@@ -326,49 +506,24 @@
             
             emptyState.style.display = 'none';
             
+            if (viewMode === 'grid') {
+                container.className = 'grid-view';
+            } else {
+                container.className = 'list-view';
+            }
+            
             bookmarks.forEach((b, i) => {
-                const card = document.createElement('div');
-                card.className = 'bookmark-card';
-                
-                let categoryHtml = '';
-                if (b.category) {
-                    categoryHtml = `<div class="bookmark-category">${escapeHtml(b.category)}</div>`;
-                }
-                
-                let descriptionHtml = '';
-                if (b.description) {
-                    descriptionHtml = `<div class="bookmark-description">${escapeHtml(b.description.substring(0, 100))}</div>`;
-                }
-                
-                card.innerHTML = `
-                    <div class="bookmark-favicon">${b.icon ? `<img src="${b.icon}" alt="icon" onerror="this.parentElement.textContent='🔗'">` : '🔗'}</div>
-                    <div class="bookmark-info">
-                        <div class="bookmark-title">${escapeHtml(b.title)}</div>
-                        <div class="bookmark-url">${escapeHtml(new URL(b.url).hostname)}</div>
-                        ${descriptionHtml}
-                        ${categoryHtml}
-                    </div>
-                    <div class="bookmark-actions">
-                        <button class="edit btn btn-sm">✏️</button>
-                        <button class="delete btn btn-sm">🗑️</button>
-                    </div>
-                `;
-                
-                card.querySelector('.edit').onclick = (e) => { e.stopPropagation(); editBookmark(i); };
-                card.querySelector('.delete').onclick = (e) => { e.stopPropagation(); removeBookmark(i); };
-                
-                card.addEventListener('click', () => {
-                    window.open(b.url, '_blank');
-                });
-                
+                const card = createBookmarkCard(b, i);
                 container.appendChild(card);
             });
         }
         
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+        function render() {
+            if (groupMode) {
+                renderGrouped();
+            } else {
+                renderNormal();
+            }
         }
         
         document.getElementById('add-btn').onclick = () => {
@@ -481,17 +636,17 @@
         document.getElementById('list-btn').onclick = () => {
             viewMode = 'list';
             localStorage.setItem('viewMode', 'list');
-            document.getElementById('bookmarks-container').className = 'list-view';
             document.getElementById('list-btn').classList.add('active');
             document.getElementById('grid-btn').classList.remove('active');
+            render();
         };
         
         document.getElementById('grid-btn').onclick = () => {
             viewMode = 'grid';
             localStorage.setItem('viewMode', 'grid');
-            document.getElementById('bookmarks-container').className = 'grid-view';
             document.getElementById('grid-btn').classList.add('active');
             document.getElementById('list-btn').classList.remove('active');
+            render();
         };
         
         document.getElementById('export-btn').onclick = () => {
@@ -540,13 +695,8 @@
         document.querySelector('.close').onclick = () => document.getElementById('modal').classList.remove('show');
         document.getElementById('modal').onclick = (e) => { if (e.target.id === 'modal') document.getElementById('modal').classList.remove('show'); };
         
-        if (viewMode === 'grid') {
-            document.getElementById('bookmarks-container').className = 'grid-view';
-            document.getElementById('grid-btn').classList.add('active');
-            document.getElementById('list-btn').classList.remove('active');
-        }
-        
         initDarkMode();
+        updateGroupButton();
         load();
     </script>
 </body>
