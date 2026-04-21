@@ -15,16 +15,14 @@
             --border: #e1e4e8;
         }
         
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --primary: #58a6ff;
-                --danger: #f85149;
-                --bg: #0d1117;
-                --bg-secondary: #161b22;
-                --text: #e6edf3;
-                --text-secondary: #8b949e;
-                --border: #30363d;
-            }
+        html.dark-mode {
+            --primary: #58a6ff;
+            --danger: #f85149;
+            --bg: #0d1117;
+            --bg-secondary: #161b22;
+            --text: #e6edf3;
+            --text-secondary: #8b949e;
+            --border: #30363d;
         }
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -33,6 +31,7 @@
             background: var(--bg);
             color: var(--text);
             padding: 20px;
+            transition: background 0.3s, color 0.3s;
         }
         
         .container { max-width: 1200px; margin: 0 auto; }
@@ -234,6 +233,7 @@
                 <button class="btn btn-warning" id="refresh-all-btn" title="Fetch icons for all bookmarks">🔄 Refresh Icons</button>
                 <button class="btn" id="export-btn">📥 Export</button>
                 <button class="btn" id="import-btn">📤 Import</button>
+                <button class="btn" id="theme-btn" title="Toggle dark mode">🌙 Dark</button>
             </div>
         </header>
         
@@ -266,6 +266,26 @@
         let bookmarks = [];
         let editIndex = null;
         let viewMode = localStorage.getItem('viewMode') || 'list';
+        let darkMode = localStorage.getItem('darkMode') === 'true';
+        
+        // Initialize dark mode
+        function initDarkMode() {
+            if (darkMode) {
+                document.documentElement.classList.add('dark-mode');
+                document.getElementById('theme-btn').textContent = '☀️ Light';
+            } else {
+                document.documentElement.classList.remove('dark-mode');
+                document.getElementById('theme-btn').textContent = '🌙 Dark';
+            }
+        }
+        
+        function toggleDarkMode() {
+            darkMode = !darkMode;
+            localStorage.setItem('darkMode', darkMode);
+            initDarkMode();
+        }
+        
+        document.getElementById('theme-btn').addEventListener('click', toggleDarkMode);
         
         function load() {
             const saved = localStorage.getItem('bookmarks');
@@ -285,7 +305,6 @@
             return url;
         }
         
-        // Get favicon - uses Google's favicon service (most reliable)
         async function getFavicon(url) {
             try {
                 const domain = new URL(url).hostname;
@@ -404,7 +423,6 @@
                 return;
             }
             
-            // Use title or fallback to domain
             if (!title) {
                 title = new URL(url).hostname;
             }
@@ -438,7 +456,6 @@
             }
         }
         
-        // GLOBAL REFRESH BUTTON - Fetches all icons
         document.getElementById('refresh-all-btn').onclick = async () => {
             const btn = document.getElementById('refresh-all-btn');
             const originalText = btn.textContent;
@@ -478,7 +495,6 @@
         };
         
         document.getElementById('export-btn').onclick = () => {
-            // Export only text data (no icons)
             const exportData = bookmarks.map(b => ({
                 title: b.title,
                 url: b.url,
@@ -505,7 +521,6 @@
                 try {
                     const imported = JSON.parse(evt.target.result);
                     if (Array.isArray(imported)) {
-                        // Initialize with imported data + empty icon field
                         bookmarks = imported.map(b => ({
                             title: b.title || '',
                             url: normalizeUrl(b.url || ''),
@@ -531,6 +546,7 @@
             document.getElementById('list-btn').classList.remove('active');
         }
         
+        initDarkMode();
         load();
     </script>
 </body>
